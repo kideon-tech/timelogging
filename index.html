@@ -417,6 +417,34 @@ function setBlock(slotStart,label){
 function bumpRecent(label){
   state.recentLabels = [label, ...state.recentLabels.filter(l=>l!==label)].slice(0,12);
 }
+function blocksInRange(s,e){
+  const S=s.getTime(),E=e.getTime();
+  return state.blocks.filter(b=>new Date(b.start).getTime()<E && new Date(b.end).getTime()>S);
+}
+/* remove everything inside [s,e), clipping blocks that straddle the edges */
+function clearRange(s,e){
+  const S=s.getTime(),E=e.getTime(), keep=[];
+  for(const b of state.blocks){
+    const bs=new Date(b.start).getTime(), be=new Date(b.end).getTime();
+    if(be<=S||bs>=E){ keep.push(b); continue; }              // no overlap
+    if(bs<S) keep.push({...b,id:uid(),end:iso(new Date(S))}); // left remainder
+    if(be>E) keep.push({...b,id:uid(),start:iso(new Date(E))}); // right remainder
+  }
+  state.blocks=keep;
+}
+/* paint a label across [s,e) as SLOT_MIN blocks, overwriting whatever is there */
+function fillRange(s,e,label){
+  clearRange(s,e);
+  label=label.trim();
+  if(label){
+    for(let t=new Date(s); t.getTime()<e.getTime(); t=new Date(t.getTime()+SLOT_MIN*60000)){
+      const end=new Date(Math.min(t.getTime()+SLOT_MIN*60000, e.getTime()));
+      state.blocks.push({id:uid(),start:iso(t),end:iso(end),label});
+    }
+    bumpRecent(label);
+  }
+  save();
+}
 function lastLabel(){
   if(!state.blocks.length) return state.recentLabels[0]||"";
   return [...state.blocks].sort((a,b)=>new Date(b.start)-new Date(a.start))[0].label;
@@ -676,21 +704,38 @@ function attachDrag(col,day){
 
 function openRangeEntry(s,e){
   const mins=(e-s)/60000;
+  const existing=blocksInRange(s,e);
+  const existLabels=[...new Set(existing.map(b=>b.label))];
   $("pingKick").textContent="ZEITRAUM EINTRAGEN";
   $("pingTitle").textContent="Was läuft in diesem Block?";
   $("pingSub").textContent=hhmm(s)+" – "+hhmm(e)+" · "+fmtDur(mins)+" · "+DOW[s.getDay()]+" "+s.getDate()+". "+MON[s.getMonth()];
   const body=$("pingBody"); body.innerHTML="";
   const inp=document.createElement("input"); inp.className="txt"; inp.setAttribute("list","labelList");
-  inp.placeholder="z. B. Meeting, Fokuszeit, Mittag …"; body.appendChild(inp);
-  const commit=v=>{ for(let t=new Date(s); t<e; t=new Date(t.getTime()+SLOT_MIN*60000)) setBlock(new Date(t),v);
-    closePing(); render(); toast(v?("Eingetragen: "+v):"Bereich geleert"); };
+  inp.placeholder="z. B. Meeting, Fokuszeit, Mittag …";
+  if(existLabels.length){ inp.value=existLabels.length===1?existLabels[0]:""; }
+  body.appendChild(inp);
+  if(existing.length){
+    const note=document.createElement("p"); note.className="muted"; note.style.marginTop="10px";
+    note.textContent="⚠ Überschreibt vorhandene Blöcke: "+existLabels.join(", ");
+    body.appendChild(note);
+  }
+  const commit=v=>{ fillRange(s,e,v); closePing(); render();
+    toast(v.trim()?("Eingetragen: "+v):"Bereich geleert"); };
   body.appendChild(recentChips(v=>commit(v)));
   inp.addEventListener("keydown",ev=>{ if(ev.key==="Enter") commit(inp.value); });
   const foot=$("pingFoot"); foot.innerHTML="";
-  const skip=document.createElement("button"); skip.className="btn ghost"; skip.textContent="Bereich leeren"; skip.onclick=()=>commit("");
+  // delete: double-confirm when the range actually contains blocks
+  const del=document.createElement("button"); del.className="btn ghost";
+  if(existing.length){
+    del.classList.add("del"); del.textContent="Bereich löschen";
+    let armed=false;
+    del.onclick=()=>{ if(!armed){ armed=true; del.textContent="Wirklich löschen? ("+existing.length+")";
+      setTimeout(()=>{ armed=false; del.textContent="Bereich löschen"; },2500); }
+      else commit(""); };
+  } else { del.textContent="Bereich leeren"; del.onclick=()=>commit(""); }
   const sp=document.createElement("div"); sp.className="spacer";
   const ok=document.createElement("button"); ok.className="btn amber"; ok.textContent="Eintragen"; ok.onclick=()=>commit(inp.value);
-  foot.append(skip,sp,ok);
+  foot.append(del,sp,ok);
   $("pingScrim").classList.add("show"); setTimeout(()=>inp.focus(),60);
 }
 
