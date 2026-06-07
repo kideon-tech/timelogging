@@ -1,0 +1,4 @@
+# test / dev artifacts
+.playwright-mcp/
+tl-*.png
+.DS_Store

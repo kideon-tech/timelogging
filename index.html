@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TimeLog — PC-Arbeitstracking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0c0f;
+    --bg-raised:#171922;
+    --bg-sunken:#06070a;
+    --line:#3a3d49;
+    --line-soft:#262932;
+    --text:#f6f7fb;
+    --text-dim:#c2c7d4;
+    --text-faint:#878d9d;
+    --amber:#ffb224;
+    --amber-soft:#ffb22433;
+    --now:#37d6ff;
+    --hour:56px;        /* px per hour */
+    --slot:14px;        /* px per 15min (=hour/4) */
+    --radius:10px;
+    --shadow:0 8px 30px rgba(0,0,0,.45);
+    --glow:#1c2030;
+    --block-lbl:#fff;
+    --block-lbl-shadow:0 1px 2px #00000099;
+    --grain:.035;
+    --scrim:#0a0806cc;
+    color-scheme:dark;
+  }
+  html[data-theme="light"]{
+    --bg:#eceef3;
+    --bg-raised:#ffffff;
+    --bg-sunken:#e0e3ea;
+    --line:#b9bfca;
+    --line-soft:#d6dae1;
+    --text:#14161c;
+    --text-dim:#474d59;
+    --text-faint:#828995;
+    --amber:#c97a00;
+    --amber-soft:#c97a0026;
+    --now:#0091c2;
+    --shadow:0 8px 30px rgba(40,50,70,.18);
+    --glow:#ffffff;
+    --block-lbl:#14161c;
+    --block-lbl-shadow:none;
+    --grain:.025;
+    --scrim:#2a2f3aa8;
+    color-scheme:light;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, var(--glow) 0%, transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans',sans-serif;
+    font-size:14px;
+    line-height:1.4;
+    overflow:hidden;
+  }
+  /* subtle grain */
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:var(--grain);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+
+  /* ---------- layout ---------- */
+  .app{display:flex;flex-direction:column;height:100vh}
+
+  header{
+    display:flex;align-items:center;gap:22px;
+    padding:16px 24px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--bg-raised),var(--bg));
+  }
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand h1{
+    font-family:'Instrument Serif',serif;font-weight:400;font-size:30px;
+    letter-spacing:.3px;line-height:1;
+  }
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--amber);
+    box-shadow:0 0 12px var(--amber);transform:translateY(-3px)}
+  .brand small{color:var(--text-faint);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+
+  .clock{display:flex;flex-direction:column;line-height:1.15}
+  .clock .big{font-family:'JetBrains Mono';font-size:22px;font-weight:700;letter-spacing:1px}
+  .clock .sub{font-size:11px;color:var(--text-dim)}
+
+  .countdown{
+    margin-left:2px;padding:8px 14px;border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--bg-sunken);display:flex;align-items:center;gap:12px;min-width:168px;
+  }
+  .countdown .ring{position:relative;width:38px;height:38px;flex:0 0 38px}
+  .countdown .ring svg{transform:rotate(-90deg)}
+  .countdown .ring .t{position:absolute;inset:0;display:grid;place-items:center;
+    font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:var(--amber)}
+  .countdown .meta{display:flex;flex-direction:column}
+  .countdown .meta b{font-family:'JetBrains Mono';font-size:15px}
+  .countdown .meta span{font-size:10.5px;color:var(--text-faint);letter-spacing:.04em;text-transform:uppercase}
+
+  .spacer{flex:1}
+
+  .controls{display:flex;align-items:center;gap:8px}
+  button.btn{
+    font-family:'IBM Plex Sans';font-size:12.5px;font-weight:500;color:var(--text);
+    background:var(--bg-raised);border:1px solid var(--line);border-radius:8px;
+    padding:8px 13px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px;
+  }
+  button.btn:hover{border-color:#4a4030;background:#272118}
+  button.btn.amber{background:var(--amber);color:#1a1206;border-color:var(--amber);font-weight:600}
+  button.btn.amber:hover{filter:brightness(1.07)}
+  button.btn.ghost{background:transparent}
+  button.icon{width:34px;height:34px;padding:0;justify-content:center;font-size:15px}
+  .hsel{font-family:'JetBrains Mono';font-size:12px;color:var(--text);background:var(--bg-raised);
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer}
+  .hsel:hover{border-color:#4a4030}
+
+  /* ---------- date nav ---------- */
+  .subbar{display:flex;align-items:center;gap:14px;padding:11px 24px;border-bottom:1px solid var(--line);
+    background:var(--bg)}
+  .subbar .range{font-family:'Instrument Serif';font-size:21px}
+  .subbar .range em{font-style:normal;color:var(--text-dim)}
+  .subbar input[type=date]{
+    background:var(--bg-raised);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;padding:7px 10px;font-family:'JetBrains Mono';font-size:12px}
+  .legend{display:flex;gap:12px;margin-left:auto;flex-wrap:wrap;max-width:46%;justify-content:flex-end}
+  .legend .chip{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-dim)}
+  .legend .sw{width:11px;height:11px;border-radius:3px}
+
+  /* ---------- calendar ---------- */
+  .cal-wrap{flex:1;overflow-y:auto;overflow-x:hidden;position:relative}
+  .cal-wrap::-webkit-scrollbar{width:11px}
+  .cal-wrap::-webkit-scrollbar-thumb{background:#322a20;border-radius:6px;border:3px solid var(--bg)}
+  .cal{display:grid;grid-template-columns:60px repeat(3,1fr);position:relative;min-height:100%}
+
+  .col-head{position:sticky;top:0;z-index:6;background:var(--bg);
+    border-bottom:1px solid var(--line);padding:9px 12px;text-align:center}
+  .col-head.today{color:var(--amber)}
+  .col-head .dow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-faint)}
+  .col-head.today .dow{color:var(--amber)}
+  .col-head .dnum{font-family:'Instrument Serif';font-size:23px;line-height:1.1}
+  .col-head .tot{font-family:'JetBrains Mono';font-size:10.5px;color:var(--text-dim);margin-top:1px}
+
+  .gutter{grid-column:1;position:relative}
+  .hr-label{position:absolute;right:8px;font-family:'JetBrains Mono';font-size:10px;
+    color:var(--text-faint);transform:translateY(-6px)}
+
+  .daycol{position:relative;border-left:1px solid var(--line-soft);cursor:cell}
+  .selbox{position:absolute;left:4px;right:4px;background:var(--amber-soft);
+    border:1.5px dashed var(--amber);border-radius:6px;z-index:3;pointer-events:none}
+  .selbox .sl{position:absolute;left:7px;top:3px;font-family:'JetBrains Mono';font-size:10px;color:var(--amber);font-weight:700}
+  body.dragging{user-select:none}
+  .daycol.today{background:linear-gradient(180deg,#f5a6230a,transparent 30%)}
+  .hr-line{position:absolute;left:0;right:0;height:1px;background:var(--line-soft)}
+  .hr-line.major{background:var(--line)}
+
+  .block{
+    position:absolute;left:4px;right:4px;border-radius:6px;padding:4px 8px;overflow:hidden;
+    cursor:pointer;border-left:4px solid var(--bc);border-top:1px solid var(--bc);
+    box-shadow:inset 0 0 0 1px #ffffff10, 0 1px 3px #00000055;
+    background:var(--bg2);transition:.12s;z-index:2;
+  }
+  .block:hover{filter:brightness(1.18);transform:translateX(1px);z-index:4;box-shadow:inset 0 0 0 1px var(--bc),0 2px 8px #00000077}
+  .block .lbl{font-size:12px;font-weight:600;color:var(--block-lbl);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:var(--block-lbl-shadow)}
+  .block .tm{font-family:'JetBrains Mono';font-size:9.5px;color:var(--text-dim)}
+
+  .nowline{position:absolute;left:0;right:0;height:0;border-top:1.5px solid var(--now);z-index:5;pointer-events:none}
+  .nowline::before{content:"";position:absolute;left:-4px;top:-4.5px;width:8px;height:8px;border-radius:50%;
+    background:var(--now);box-shadow:0 0 8px var(--now)}
+  .nowslot{position:absolute;left:0;right:0;background:#f5a62312;border-top:1px dashed #f5a62355;
+    border-bottom:1px dashed #f5a62355;z-index:1;pointer-events:none}
+
+  .empty-hint{position:absolute;left:50%;top:38%;transform:translateX(-50%);text-align:center;
+    color:var(--text-faint);width:80%}
+  .empty-hint .em{font-family:'Instrument Serif';font-size:19px;font-style:italic;color:var(--text-dim)}
+
+  /* ---------- modal ---------- */
+  .scrim{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(3px);
+    display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
+  .scrim.show{display:flex;animation:fade .18s ease}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+  .modal{background:linear-gradient(180deg,var(--bg-raised),var(--bg));border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--shadow);width:min(560px,100%);max-height:88vh;overflow:auto;
+    animation:pop .22s cubic-bezier(.2,.8,.2,1)}
+  .modal::-webkit-scrollbar{width:10px}
+  .modal::-webkit-scrollbar-thumb{background:#322a20;border-radius:6px;border:3px solid var(--bg-raised)}
+  .modal-h{padding:22px 24px 8px}
+  .modal-h .kick{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+  .modal-h h2{font-family:'Instrument Serif';font-weight:400;font-size:27px;margin-top:3px}
+  .modal-h p{color:var(--text-dim);font-size:13px;margin-top:4px}
+  .modal-b{padding:8px 24px 4px}
+  .modal-f{padding:16px 24px 22px;display:flex;gap:10px;align-items:center}
+
+  input.txt,select.txt{
+    width:100%;background:var(--bg-sunken);border:1px solid var(--line);border-radius:10px;
+    color:var(--text);font-family:'IBM Plex Sans';font-size:15px;padding:13px 14px;outline:none;transition:.15s}
+  input.txt:focus{border-color:var(--amber);box-shadow:0 0 0 3px var(--amber-soft)}
+  label.fl{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);margin:14px 0 7px}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .chip-b{font-family:'IBM Plex Sans';font-size:12.5px;color:var(--text);background:var(--bg-sunken);
+    border:1px solid var(--line);border-left:3px solid var(--bc,#888);border-radius:20px;padding:6px 13px;cursor:pointer;transition:.13s}
+  .chip-b:hover{background:#272118;border-color:#4a4030}
+  .chip-b.same{border-color:var(--amber);color:var(--amber)}
+
+  /* catch-up rows */
+  .gaprow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+  .gaprow .tg{font-family:'JetBrains Mono';font-size:12px;color:var(--text-dim);flex:0 0 96px}
+  .gaprow input{flex:1;background:var(--bg-sunken);border:1px solid var(--line);border-radius:8px;
+    color:var(--text);font-size:13.5px;padding:9px 11px;outline:none}
+  .gaprow input:focus{border-color:var(--amber)}
+  .gaprow .skip{flex:0 0 auto;color:var(--text-faint);font-size:11px;cursor:pointer;padding:6px}
+  .gaprow.done{opacity:.4}
+
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{background:var(--bg-raised);border:0;color:var(--text-dim);padding:8px 12px;cursor:pointer;font-size:12px;font-family:inherit}
+  .seg button.on{background:var(--amber);color:#1a1206;font-weight:600}
+
+  .row{display:flex;gap:12px}
+  .row>*{flex:1}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--bg-raised);border:1px solid var(--line);border-left:3px solid var(--amber);
+    padding:12px 18px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transition:.25s;z-index:200;font-size:13px}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .muted{color:var(--text-faint);font-size:12px}
+  .del{color:var(--now);background:transparent;border:1px solid #4a2a22}
+  .del:hover{background:#2a1813}
+  kbd{font-family:'JetBrains Mono';font-size:10px;background:var(--bg-sunken);border:1px solid var(--line);
+    border-radius:4px;padding:1px 5px;color:var(--text-dim)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>TimeLog</h1>
+      <small>PC-Arbeitstracking</small>
+    </div>
+    <div class="clock">
+      <span class="big mono" id="clock">--:--</span>
+      <span class="sub" id="clockDate">—</span>
+    </div>
+    <div class="countdown" title="Nächster Ping">
+      <div class="ring">
+        <svg width="38" height="38"><circle cx="19" cy="19" r="16" fill="none" stroke="#2c261e" stroke-width="4"/>
+        <circle id="ringProg" cx="19" cy="19" r="16" fill="none" stroke="#f5a623" stroke-width="4"
+          stroke-linecap="round" stroke-dasharray="100.5" stroke-dashoffset="0"/></svg>
+        <span class="t mono" id="ringTxt">15</span>
+      </div>
+      <div class="meta">
+        <b class="mono" id="cdTime">15:00</b>
+        <span>bis Ping</span>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="controls">
+      <select class="hsel" id="intervalSel" title="Blockgröße / Ping-Intervall"></select>
+      <button class="btn ghost icon" id="themeBtn" title="Hell/Dunkel umschalten">🌙</button>
+      <button class="btn ghost" id="notifyBtn" title="Browser-Benachrichtigungen erlauben">🔔 Notify</button>
+      <button class="btn ghost icon" id="soundBtn" title="Ton an/aus">🔊</button>
+      <button class="btn" id="logNowBtn">+ Jetzt eintragen</button>
+      <button class="btn amber" id="exportBtn">↓ Excel</button>
+    </div>
+  </header>
+
+  <div class="subbar">
+    <button class="btn icon" id="prevBtn" title="Zurück">◀</button>
+    <button class="btn" id="todayBtn">Heute</button>
+    <button class="btn icon" id="nextBtn" title="Vor">▶</button>
+    <span class="range" id="rangeLabel">—</span>
+    <input type="date" id="datePick">
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="cal-wrap" id="calWrap">
+    <div class="cal" id="cal"></div>
+  </div>
+</div>
+
+<!-- Ping / Catch-up modal -->
+<div class="scrim" id="pingScrim">
+  <div class="modal">
+    <div class="modal-h">
+      <div class="kick" id="pingKick">15-MINUTEN-PING</div>
+      <h2 id="pingTitle">Woran arbeitest du gerade?</h2>
+      <p id="pingSub">—</p>
+    </div>
+    <div class="modal-b" id="pingBody"></div>
+    <div class="modal-f" id="pingFoot"></div>
+  </div>
+</div>
+
+<!-- Edit block modal -->
+<div class="scrim" id="editScrim">
+  <div class="modal">
+    <div class="modal-h">
+      <div class="kick">BLOCK BEARBEITEN</div>
+      <h2 id="editTime">—</h2>
+    </div>
+    <div class="modal-b">
+      <label class="fl">Tätigkeit <span id="editBulkHint" style="text-transform:none;letter-spacing:0;color:var(--text-faint)"></span></label>
+      <div style="display:flex;gap:8px">
+        <input class="txt" id="editInput" list="labelList" placeholder="z. B. Instalon, Email, Meeting …">
+        <button class="btn" id="editAll" style="display:none;white-space:nowrap">↧ für alle</button>
+      </div>
+      <div class="chips" id="editChips"></div>
+      <div id="editSlots"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn del" id="editDel">Löschen</button>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="editCancel">Abbrechen</button>
+      <button class="btn amber" id="editSave">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="scrim" id="exportScrim">
+  <div class="modal">
+    <div class="modal-h">
+      <div class="kick">EXPORT</div>
+      <h2>Als Excel exportieren</h2>
+      <p>Zeitraum wählen — leer lassen für alles.</p>
+    </div>
+    <div class="modal-b">
+      <div class="row">
+        <div><label class="fl">Von</label><input type="date" class="txt" id="expFrom"></div>
+        <div><label class="fl">Bis</label><input type="date" class="txt" id="expTo"></div>
+      </div>
+      <p class="muted" id="expCount" style="margin-top:14px">—</p>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" id="expAll">Alles</button>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="expCancel">Abbrechen</button>
+      <button class="btn amber" id="expGo">↓ .xlsx</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="labelList"></datalist>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   TimeLog — single-file PC work tracker.  MIT License.
+   ============================================================ */
+
+const KEY = "timelog.v1";
+const INTERVALS = [60,30,20,15,10,6];   // = 60 / n  (n = 1,2,3,4,6,10)
+let SLOT_MIN = 15;                       // active block size, from settings
+const DAY_COLS = 3;
+const CATCHUP_CAP_MS = 2 * 60 * 60 * 1000;   // only ask back ~2h
+const PALETTE = ["#e8a33d","#5ec5b6","#e06c75","#7aa2f7","#c39ac9",
+                 "#a3be8c","#d19a66","#56b6c2","#e5c07b","#bb9af7","#ef9fbc","#83c9f4"];
+const HOUR_PX = 116, PX_PER_MIN = HOUR_PX/60;
+
+/* ---------- state ---------- */
+let state = load();
+SLOT_MIN = INTERVALS.includes(state.settings.intervalMin) ? state.settings.intervalMin : 15;
+let anchor = startOfDay(new Date());   // left-most visible day
+
+function load(){
+  try{
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if(s && s.blocks) return Object.assign({blocks:[],recentLabels:[],settings:{}}, s,
+      {settings:Object.assign({intervalMin:SLOT_MIN,soundOn:true,notifyOn:false}, s.settings||{})});
+  }catch(e){}
+  return {blocks:[], recentLabels:[], settings:{intervalMin:SLOT_MIN,soundOn:true,notifyOn:false}};
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+
+/* ---------- time helpers ---------- */
+function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function floorSlot(d){ const x=new Date(d); x.setSeconds(0,0); x.setMinutes(Math.floor(x.getMinutes()/SLOT_MIN)*SLOT_MIN); return x; }
+function nextBoundary(d){ return new Date(floorSlot(d).getTime()+SLOT_MIN*60000); }
+function iso(d){ const z=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+"T"+z(d.getHours())+":"+z(d.getMinutes())+":00"; }
+function hhmm(d){ const z=n=>String(n).padStart(2,"0"); return z(d.getHours())+":"+z(d.getMinutes()); }
+function sameDay(a,b){ return a.getFullYear()==b.getFullYear()&&a.getMonth()==b.getMonth()&&a.getDate()==b.getDate(); }
+const DOW=["So","Mo","Di","Mi","Do","Fr","Sa"], MON=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+
+/* ---------- colors ---------- */
+function colorFor(label){
+  let h=0; for(let i=0;i<label.length;i++) h=(h*31+label.charCodeAt(i))>>>0;
+  return PALETTE[h%PALETTE.length];
+}
+function tint(hex){ return hex+"3a"; }   // fill alpha
+
+/* ---------- block ops ---------- */
+function uid(){ return "b"+Math.floor(performance.now()*1000).toString(36)+Object.keys(state.blocks).length; }
+function blockAt(slotStart){
+  const t=slotStart.getTime();
+  return state.blocks.find(b=>new Date(b.start).getTime()===t);
+}
+function setBlock(slotStart,label){
+  label=label.trim();
+  const s=new Date(slotStart), e=new Date(s.getTime()+SLOT_MIN*60000);
+  const ex=blockAt(s);
+  if(!label){ if(ex) state.blocks=state.blocks.filter(b=>b!==ex); }
+  else if(ex){ ex.label=label; }
+  else state.blocks.push({id:uid(),start:iso(s),end:iso(e),label});
+  if(label) bumpRecent(label);
+  save();
+}
+function bumpRecent(label){
+  state.recentLabels = [label, ...state.recentLabels.filter(l=>l!==label)].slice(0,12);
+}
+function lastLabel(){
+  if(!state.blocks.length) return state.recentLabels[0]||"";
+  return [...state.blocks].sort((a,b)=>new Date(b.start)-new Date(a.start))[0].label;
+}
+
+/* gaps: unfilled past slots within CATCHUP_CAP_MS, oldest-first */
+function gapSlots(){
+  const now=new Date(), out=[];
+  let s=floorSlot(new Date(now.getTime()-CATCHUP_CAP_MS));
+  const liveEnd=floorSlot(now);   // current (ongoing) slot start = not yet ended
+  for(let t=s; t.getTime()<liveEnd.getTime(); t=new Date(t.getTime()+SLOT_MIN*60000)){
+    if(!blockAt(t)) out.push(new Date(t));
+  }
+  return out;
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const $=id=>document.getElementById(id);
+
+function render(){
+  renderHeaderClock();
+  renderRange();
+  renderLegend();
+  renderCalendar();
+  renderDatalist();
+}
+
+function renderHeaderClock(){
+  const n=new Date();
+  $("clock").textContent=hhmm(n);
+  $("clockDate").textContent=DOW[n.getDay()]+", "+n.getDate()+". "+MON[n.getMonth()];
+}
+
+function renderRange(){
+  const a=anchor, b=addDays(anchor,DAY_COLS-1);
+  $("rangeLabel").innerHTML = a.getDate()+". "+(a.getMonth()!=b.getMonth()?MON[a.getMonth()]+" ":"")+
+    "<em>–</em> "+b.getDate()+". "+MON[b.getMonth()]+" "+b.getFullYear();
+  $("datePick").value = iso(a).slice(0,10);
+}
+
+function renderLegend(){
+  const days=[...Array(DAY_COLS)].map((_,i)=>addDays(anchor,i));
+  const labels=new Set();
+  state.blocks.forEach(b=>{ const d=new Date(b.start); if(days.some(x=>sameDay(x,d))) labels.add(b.label); });
+  const el=$("legend"); el.innerHTML="";
+  [...labels].slice(0,8).forEach(l=>{
+    const c=document.createElement("span"); c.className="chip";
+    c.innerHTML=`<span class="sw" style="background:${colorFor(l)}"></span>${l}`;
+    el.appendChild(c);
+  });
+}
+
+function renderCalendar(){
+  const cal=$("cal"); cal.innerHTML="";
+  const totalH=24*HOUR_PX;
+  const now=new Date();
+
+  // gutter
+  const gut=document.createElement("div"); gut.className="gutter"; gut.style.height=totalH+"px";
+  const gh=document.createElement("div"); gh.className="col-head"; gh.style.visibility="hidden"; gh.textContent=".";
+  gut.appendChild(gh);
+  for(let h=1;h<24;h++){
+    const lb=document.createElement("div"); lb.className="hr-label";
+    lb.style.top=(h*HOUR_PX)+"px"; lb.textContent=String(h).padStart(2,"0")+":00";
+    gut.appendChild(lb);
+  }
+  cal.appendChild(gut);
+
+  for(let i=0;i<DAY_COLS;i++){
+    const day=addDays(anchor,i), isToday=sameDay(day,now);
+    const col=document.createElement("div"); col.className="daycol"+(isToday?" today":"");
+    col.style.height=totalH+"px";
+
+    const head=document.createElement("div");
+    head.className="col-head"+(isToday?" today":"");
+    const dayBlocks=state.blocks.filter(b=>sameDay(new Date(b.start),day));
+    const mins=dayBlocks.reduce((a,b)=>a+blockDurMin(b),0);
+    head.innerHTML=`<div class="dow">${DOW[day.getDay()]}</div><div class="dnum">${day.getDate()}</div>`+
+      `<div class="tot">${mins?fmtDur(mins):"–"}</div>`;
+    col.appendChild(head);
+
+    // hour lines
+    for(let h=0;h<24;h++){
+      const ln=document.createElement("div"); ln.className="hr-line"+(h%6===0?" major":"");
+      ln.style.top=(h*HOUR_PX)+"px"; col.appendChild(ln);
+    }
+
+    // current-slot highlight + now line
+    if(isToday){
+      const ss=floorSlot(now);
+      const ns=document.createElement("div"); ns.className="nowslot";
+      ns.style.top=(minOfDay(ss)*PX_PER_MIN)+"px"; ns.style.height=(SLOT_MIN*PX_PER_MIN)+"px";
+      col.appendChild(ns);
+      const nl=document.createElement("div"); nl.className="nowline";
+      nl.style.top=(minOfDay(now)*PX_PER_MIN)+"px"; col.appendChild(nl);
+    }
+
+    // blocks — contiguous same-label slots merge into one long block
+    mergeRuns(dayBlocks).forEach(seg=>{
+      const s=new Date(seg.start), e=new Date(seg.end);
+      const mins=(e-s)/60000;
+      const el=document.createElement("div"); el.className="block";
+      const c=colorFor(seg.label);
+      el.style.setProperty("--bc",c); el.style.setProperty("--bg2",tint(c));
+      el.style.top=(minOfDay(s)*PX_PER_MIN)+"px"; el.style.height=Math.max(11,mins*PX_PER_MIN-3)+"px";
+      const range = seg.blocks.length>1 ? hhmm(s)+"–"+hhmm(e)+" · "+fmtDur(mins) : hhmm(s);
+      el.innerHTML=`<div class="lbl">${esc(seg.label)}</div><div class="tm">${range}</div>`;
+      el.title=seg.label+"  ("+hhmm(s)+"–"+hhmm(e)+", "+fmtDur(mins)+")";
+      el.onclick=()=>openEdit(seg);
+      col.appendChild(el);
+    });
+
+    if(!dayBlocks.length && !isToday){
+      const eh=document.createElement("div"); eh.className="empty-hint";
+      eh.innerHTML=`<div class="em">ziehen zum Eintragen</div>`;
+      col.appendChild(eh);
+    }
+    attachDrag(col,day);
+    cal.appendChild(col);
+  }
+}
+function mergeRuns(blocks){
+  const sorted=[...blocks].sort((a,b)=>new Date(a.start)-new Date(b.start));
+  const segs=[];
+  for(const b of sorted){
+    const last=segs[segs.length-1];
+    if(last && last.label===b.label && new Date(last.end).getTime()===new Date(b.start).getTime()){
+      last.end=b.end; last.blocks.push(b);
+    } else segs.push({start:b.start,end:b.end,label:b.label,blocks:[b]});
+  }
+  return segs;
+}
+function minOfDay(d){ return d.getHours()*60+d.getMinutes(); }
+function blockDurMin(b){ return (new Date(b.end)-new Date(b.start))/60000; }
+function fmtDur(min){ const h=Math.floor(min/60),m=min%60; return h?(h+"h"+(m?" "+m+"m":"")):(m+"m"); }
+function esc(s){ return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function renderDatalist(){
+  $("labelList").innerHTML=state.recentLabels.map(l=>`<option value="${esc(l)}">`).join("");
+}
+
+/* ============================================================
+   PING / CATCH-UP
+   ============================================================ */
+function recentChips(onPick, current){
+  const wrap=document.createElement("div"); wrap.className="chips";
+  const last=lastLabel();
+  if(last){
+    const b=document.createElement("button"); b.className="chip-b same";
+    b.textContent="↻ Weiter wie eben — "+last;
+    b.onclick=()=>onPick(last); wrap.appendChild(b);
+  }
+  state.recentLabels.filter(l=>l!==last).slice(0,8).forEach(l=>{
+    const b=document.createElement("button"); b.className="chip-b";
+    b.style.setProperty("--bc",colorFor(l)); b.textContent=l;
+    b.onclick=()=>onPick(l); wrap.appendChild(b);
+  });
+  return wrap;
+}
+
+function openPing(triggeredByTimer){
+  const gaps=gapSlots();
+  if(!gaps.length){ if(!triggeredByTimer) openLogNow(); return; }
+  if(gaps.length===1) openSinglePing(gaps[0]);
+  else openCatchup(gaps);
+  $("pingScrim").classList.add("show");
+}
+
+function openSinglePing(slot){
+  const end=new Date(slot.getTime()+SLOT_MIN*60000);
+  $("pingKick").textContent="15-MINUTEN-PING";
+  $("pingTitle").textContent="Woran hast du gearbeitet?";
+  $("pingSub").textContent=hhmm(slot)+" – "+hhmm(end)+" · "+DOW[slot.getDay()]+" "+slot.getDate()+". "+MON[slot.getMonth()];
+  const body=$("pingBody"); body.innerHTML="";
+  const inp=document.createElement("input");
+  inp.className="txt"; inp.setAttribute("list","labelList");
+  inp.placeholder="Stichwort … z. B. Instalon, Email, Meeting";
+  body.appendChild(inp);
+  const commit=v=>{ setBlock(slot,v); closePing(); render(); toast(v?("Eingetragen: "+v):"Slot leer gelassen"); };
+  body.appendChild(recentChips(v=>commit(v),null));
+  inp.addEventListener("keydown",e=>{ if(e.key==="Enter") commit(inp.value); });
+
+  const foot=$("pingFoot"); foot.innerHTML="";
+  const skip=document.createElement("button"); skip.className="btn ghost";
+  skip.innerHTML="Nicht am PC / leer lassen"; skip.onclick=()=>commit("");
+  const sp=document.createElement("div"); sp.className="spacer";
+  const ok=document.createElement("button"); ok.className="btn amber"; ok.textContent="Eintragen";
+  ok.onclick=()=>commit(inp.value);
+  foot.append(skip,sp,ok);
+  setTimeout(()=>inp.focus(),60);
+}
+
+function openCatchup(gaps){
+  $("pingKick").textContent="CATCH-UP · "+gaps.length+" SLOTS";
+  $("pingTitle").textContent="Was war seit eben los?";
+  $("pingSub").textContent="Lücken der letzten 2 Stunden. Leer lassen ist ok — du warst evtl. nicht am PC.";
+  const body=$("pingBody"); body.innerHTML="";
+  const rows=gaps.map(slot=>{
+    const end=new Date(slot.getTime()+SLOT_MIN*60000);
+    const row=document.createElement("div"); row.className="gaprow";
+    const tg=document.createElement("span"); tg.className="tg"; tg.textContent=hhmm(slot)+"–"+hhmm(end);
+    const inp=document.createElement("input"); inp.setAttribute("list","labelList");
+    inp.placeholder="leer lassen, wenn weg vom PC";
+    const skip=document.createElement("span"); skip.className="skip"; skip.textContent="✕";
+    skip.title="leer lassen"; skip.onclick=()=>{ inp.value=""; row.classList.add("done"); };
+    row.append(tg,inp,skip);
+    body.appendChild(row);
+    return {slot,inp,row};
+  });
+  rows[0].inp.focus();
+  // quick "all = X"
+  const quick=recentChips(v=>{ rows.forEach(r=>{ if(!r.row.classList.contains("done")) r.inp.value=v; }); },null);
+  quick.style.marginTop="14px"; body.appendChild(quick);
+
+  const foot=$("pingFoot"); foot.innerHTML="";
+  const skipAll=document.createElement("button"); skipAll.className="btn ghost";
+  skipAll.textContent="Alle leer lassen"; skipAll.onclick=()=>{ closePing(); };
+  const sp=document.createElement("div"); sp.className="spacer";
+  const ok=document.createElement("button"); ok.className="btn amber"; ok.textContent="Speichern";
+  ok.onclick=()=>{ rows.forEach(r=>setBlock(r.slot,r.inp.value)); closePing(); render();
+    toast("Catch-up gespeichert"); };
+  foot.append(skipAll,sp,ok);
+}
+
+/* ---------- drag-to-select (Google-Calendar-Stil) ---------- */
+function attachDrag(col,day){
+  col.addEventListener("mousedown",e=>{
+    if(e.button!==0||e.target.closest(".block")||e.target.closest(".col-head")) return;
+    const rect=col.getBoundingClientRect();
+    const slotPx=SLOT_MIN*PX_PER_MIN, maxIdx=Math.floor(1440/SLOT_MIN)-1;
+    const idxAt=cy=>Math.max(0,Math.min(maxIdx,Math.floor((cy-rect.top)/slotPx)));
+    const startIdx=idxAt(e.clientY);
+    const box=document.createElement("div"); box.className="selbox";
+    const lbl=document.createElement("span"); lbl.className="sl"; box.appendChild(lbl);
+    col.appendChild(box);
+    document.body.classList.add("dragging");
+    const slotTime=i=>{ const d=new Date(day); d.setMinutes(i*SLOT_MIN); return d; };
+    const draw=cur=>{
+      const lo=Math.min(startIdx,cur),hi=Math.max(startIdx,cur);
+      box.style.top=(lo*slotPx)+"px"; box.style.height=((hi-lo+1)*slotPx)+"px";
+      lbl.textContent=hhmm(slotTime(lo))+"–"+hhmm(slotTime(hi+1))+"  ("+fmtDur((hi-lo+1)*SLOT_MIN)+")";
+    };
+    draw(startIdx);
+    const move=ev=>draw(idxAt(ev.clientY));
+    const up=ev=>{
+      document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up);
+      document.body.classList.remove("dragging"); box.remove();
+      const cur=idxAt(ev.clientY), lo=Math.min(startIdx,cur), hi=Math.max(startIdx,cur);
+      openRangeEntry(slotTime(lo),slotTime(hi+1));
+    };
+    document.addEventListener("mousemove",move); document.addEventListener("mouseup",up);
+    e.preventDefault();
+  });
+}
+
+function openRangeEntry(s,e){
+  const mins=(e-s)/60000;
+  $("pingKick").textContent="ZEITRAUM EINTRAGEN";
+  $("pingTitle").textContent="Was läuft in diesem Block?";
+  $("pingSub").textContent=hhmm(s)+" – "+hhmm(e)+" · "+fmtDur(mins)+" · "+DOW[s.getDay()]+" "+s.getDate()+". "+MON[s.getMonth()];
+  const body=$("pingBody"); body.innerHTML="";
+  const inp=document.createElement("input"); inp.className="txt"; inp.setAttribute("list","labelList");
+  inp.placeholder="z. B. Meeting, Fokuszeit, Mittag …"; body.appendChild(inp);
+  const commit=v=>{ for(let t=new Date(s); t<e; t=new Date(t.getTime()+SLOT_MIN*60000)) setBlock(new Date(t),v);
+    closePing(); render(); toast(v?("Eingetragen: "+v):"Bereich geleert"); };
+  body.appendChild(recentChips(v=>commit(v)));
+  inp.addEventListener("keydown",ev=>{ if(ev.key==="Enter") commit(inp.value); });
+  const foot=$("pingFoot"); foot.innerHTML="";
+  const skip=document.createElement("button"); skip.className="btn ghost"; skip.textContent="Bereich leeren"; skip.onclick=()=>commit("");
+  const sp=document.createElement("div"); sp.className="spacer";
+  const ok=document.createElement("button"); ok.className="btn amber"; ok.textContent="Eintragen"; ok.onclick=()=>commit(inp.value);
+  foot.append(skip,sp,ok);
+  $("pingScrim").classList.add("show"); setTimeout(()=>inp.focus(),60);
+}
+
+function openLogNow(){
+  // manual: log the current (ongoing) slot
+  openSinglePing(floorSlot(new Date()));
+  $("pingScrim").classList.add("show");
+  $("pingKick").textContent="MANUELL EINTRAGEN";
+  $("pingTitle").textContent="Woran arbeitest du gerade?";
+}
+function closePing(){ $("pingScrim").classList.remove("show"); }
+
+/* ============================================================
+   EDIT BLOCK
+   ============================================================ */
+let editing=null, editRows=[];
+function openEdit(seg){
+  editing=seg;
+  const blocks=[...seg.blocks].sort((a,b)=>new Date(a.start)-new Date(b.start));
+  editing.blocks=blocks;
+  const s=new Date(seg.start),e=new Date(seg.end), mins=(e-s)/60000;
+  $("editTime").textContent=hhmm(s)+" – "+hhmm(e)+"  ·  "+DOW[s.getDay()]+" "+s.getDate()+". "+MON[s.getMonth()]+
+    (blocks.length>1?"  ·  "+fmtDur(mins):"");
+  const inp=$("editInput");
+  const allSame=blocks.every(b=>b.label===blocks[0].label);
+  inp.value=allSame?blocks[0].label:"";
+  const chips=$("editChips"); chips.innerHTML="";
+  state.recentLabels.slice(0,8).forEach(l=>{
+    const c=document.createElement("button"); c.className="chip-b"; c.style.setProperty("--bc",colorFor(l));
+    c.textContent=l; c.onclick=()=>{ inp.value=l; }; chips.appendChild(c);
+  });
+
+  // per-slot rows (only when the block spans more than one slot)
+  const slots=$("editSlots"); slots.innerHTML=""; editRows=[];
+  if(blocks.length>1){
+    $("editAll").style.display=""; $("editBulkHint").textContent="– setzt alle "+blocks.length+" Blöcke";
+    const lab=document.createElement("label"); lab.className="fl"; lab.textContent="Einzelne Blöcke"; slots.appendChild(lab);
+    blocks.forEach(b=>{
+      const bs=new Date(b.start),be=new Date(b.end);
+      const row=document.createElement("div"); row.className="gaprow";
+      const tg=document.createElement("span"); tg.className="tg"; tg.textContent=hhmm(bs)+"–"+hhmm(be);
+      const ri=document.createElement("input"); ri.setAttribute("list","labelList"); ri.value=b.label;
+      const x=document.createElement("span"); x.className="skip"; x.textContent="✕"; x.title="diesen Block löschen";
+      x.onclick=()=>{ ri.value=""; row.classList.add("done"); };
+      ri.addEventListener("input",()=>row.classList.remove("done"));
+      row.append(tg,ri,x); slots.appendChild(row);
+      editRows.push({start:b.start,input:ri});
+    });
+  } else { $("editAll").style.display="none"; $("editBulkHint").textContent=""; }
+
+  $("editScrim").classList.add("show"); setTimeout(()=>inp.focus(),60);
+}
+$("editAll").onclick=()=>{ editRows.forEach(r=>{ r.input.value=$("editInput").value; r.input.parentElement.classList.remove("done"); }); };
+$("editSave").onclick=()=>{
+  if(editRows.length) editRows.forEach(r=>setBlock(new Date(r.start),r.input.value));
+  else setBlock(new Date(editing.blocks[0].start),$("editInput").value);
+  close("editScrim"); render();
+};
+$("editDel").onclick=()=>{ editing.blocks.forEach(b=>setBlock(new Date(b.start),""));
+  close("editScrim"); render(); toast(editing.blocks.length>1?"Block gelöscht ("+editing.blocks.length+" Slots)":"Block gelöscht"); };
+$("editCancel").onclick=()=>close("editScrim");
+$("editInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("editSave").click(); });
+
+function close(id){ $(id).classList.remove("show"); }
+
+/* ============================================================
+   EXPORT (xlsx via SheetJS)
+   ============================================================ */
+function exportRows(){
+  let from=$("expFrom").value?new Date($("expFrom").value+"T00:00:00"):null;
+  let to=$("expTo").value?new Date($("expTo").value+"T23:59:59"):null;
+  return [...state.blocks].sort((a,b)=>new Date(a.start)-new Date(b.start))
+    .filter(b=>{ const s=new Date(b.start); return (!from||s>=from)&&(!to||s<=to); });
+}
+function updateExpCount(){ $("expCount").textContent=exportRows().length+" Blöcke im Zeitraum"; }
+function doExport(){
+  if(typeof XLSX==="undefined"){ toast("SheetJS nicht geladen (offline?)"); return; }
+  const rows=exportRows();
+  if(!rows.length){ toast("Nichts zu exportieren"); return; }
+  const data=[["Datum","Wochentag","Start","Ende","Dauer (min)","Tätigkeit"]];
+  rows.forEach(b=>{ const s=new Date(b.start),e=new Date(b.end);
+    data.push([s.toLocaleDateString("de-DE"),DOW[s.getDay()],hhmm(s),hhmm(e),blockDurMin(b),b.label]); });
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  ws["!cols"]=[{wch:12},{wch:10},{wch:8},{wch:8},{wch:12},{wch:34}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"TimeLog");
+  const tag=(rows[0].start.slice(0,10))+"_bis_"+(rows[rows.length-1].start.slice(0,10));
+  XLSX.writeFile(wb,"timelog_"+tag+".xlsx");
+  close("exportScrim"); toast("Exportiert: "+rows.length+" Blöcke");
+}
+
+/* ============================================================
+   TIMER
+   ============================================================ */
+let lastFired=floorSlot(new Date()).getTime();
+function scheduleTick(){
+  const ms=nextBoundary(new Date()).getTime()-Date.now()+200;
+  setTimeout(()=>{ onBoundary(); scheduleTick(); }, Math.max(ms,500));
+}
+function onBoundary(){
+  lastFired=floorSlot(new Date()).getTime();
+  const gaps=gapSlots();
+  if(gaps.length){
+    if(state.settings.soundOn) beep();
+    notify(gaps.length);
+    openPing(true);
+  }
+  render();
+}
+function tickClock(){ renderHeaderClock(); updateCountdown(); updateNowLine(); }
+function updateNowLine(){
+  // cheap: only reposition existing now elements
+  const now=new Date();
+  document.querySelectorAll(".nowline").forEach(n=>n.style.top=(minOfDay(now)*PX_PER_MIN)+"px");
+}
+function updateCountdown(){
+  const now=Date.now(), nb=nextBoundary(new Date()).getTime();
+  const remain=Math.max(0,nb-now), total=SLOT_MIN*60000;
+  const mm=Math.floor(remain/60000), ss=Math.floor(remain%60000/1000);
+  $("cdTime").textContent=String(mm).padStart(2,"0")+":"+String(ss).padStart(2,"0");
+  $("ringTxt").textContent=mm;
+  const frac=remain/total, circ=2*Math.PI*16;
+  const prog=$("ringProg"); prog.setAttribute("stroke-dasharray",circ.toFixed(1));
+  prog.setAttribute("stroke-dashoffset",(circ*(1-frac)).toFixed(1));
+}
+
+/* ---------- sound ---------- */
+let actx=null;
+function beep(){
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==="suspended") actx.resume();
+    const t=actx.currentTime;
+    [880,1320].forEach((f,i)=>{
+      const o=actx.createOscillator(),g=actx.createGain();
+      o.type="sine"; o.frequency.value=f;
+      o.connect(g); g.connect(actx.destination);
+      const s=t+i*0.18; g.gain.setValueAtTime(0,s);
+      g.gain.linearRampToValueAtTime(0.18,s+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,s+0.16);
+      o.start(s); o.stop(s+0.17);
+    });
+  }catch(e){}
+}
+
+/* ---------- notification ---------- */
+function notify(n){
+  if(!state.settings.notifyOn || !("Notification" in window) || Notification.permission!=="granted") return;
+  try{ new Notification("TimeLog — Ping",{body:n>1?(n+" Slots nachzutragen"):"Woran arbeitest du gerade?",
+    tag:"timelog-ping",renotify:true}); }catch(e){}
+}
+
+/* ---------- toast ---------- */
+let toastT=null;
+function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2400); }
+
+/* ============================================================
+   WIRING
+   ============================================================ */
+$("prevBtn").onclick=()=>{ anchor=addDays(anchor,-DAY_COLS); render(); };
+$("nextBtn").onclick=()=>{ anchor=addDays(anchor,DAY_COLS); render(); };
+$("todayBtn").onclick=()=>{ anchor=startOfDay(new Date()); render(); scrollToNow(); };
+$("datePick").onchange=e=>{ if(e.target.value){ anchor=startOfDay(new Date(e.target.value+"T00:00:00")); render(); } };
+$("logNowBtn").onclick=()=>openLogNow();
+$("exportBtn").onclick=()=>{ updateExpCount(); $("exportScrim").classList.add("show"); };
+$("expCancel").onclick=()=>close("exportScrim");
+$("expAll").onclick=()=>{ $("expFrom").value=""; $("expTo").value=""; updateExpCount(); };
+$("expGo").onclick=doExport;
+$("expFrom").onchange=updateExpCount; $("expTo").onchange=updateExpCount;
+
+function applyTheme(){
+  const light=state.settings.theme==="light";
+  document.documentElement.setAttribute("data-theme", light?"light":"dark");
+  $("themeBtn").textContent=light?"☀️":"🌙";
+}
+$("themeBtn").onclick=()=>{ state.settings.theme=(state.settings.theme==="light")?"dark":"light"; save(); applyTheme(); };
+
+function initInterval(){
+  const sel=$("intervalSel");
+  sel.innerHTML=INTERVALS.map(m=>`<option value="${m}">${m} min</option>`).join("");
+  sel.value=String(SLOT_MIN);
+  sel.onchange=()=>{
+    SLOT_MIN=parseInt(sel.value,10);
+    state.settings.intervalMin=SLOT_MIN; save();
+    lastFired=floorSlot(new Date()).getTime();
+    render(); updateCountdown();
+    toast("Blockgröße: "+SLOT_MIN+" min");
+  };
+}
+
+$("soundBtn").onclick=()=>{ state.settings.soundOn=!state.settings.soundOn; save();
+  $("soundBtn").textContent=state.settings.soundOn?"🔊":"🔈";
+  $("soundBtn").classList.toggle("ghost",!state.settings.soundOn);
+  if(state.settings.soundOn) beep(); toast("Ton "+(state.settings.soundOn?"an":"aus")); };
+
+$("notifyBtn").onclick=async()=>{
+  if(!("Notification" in window)){ toast("Browser kann keine Notifications"); return; }
+  let p=Notification.permission;
+  if(p!=="granted") p=await Notification.requestPermission();
+  state.settings.notifyOn=(p==="granted"); save(); refreshNotifyBtn();
+  toast(state.settings.notifyOn?"Benachrichtigungen an":"Abgelehnt");
+};
+function refreshNotifyBtn(){
+  const on=state.settings.notifyOn && ("Notification" in window) && Notification.permission==="granted";
+  $("notifyBtn").textContent=on?"🔔 An":"🔔 Notify";
+  $("notifyBtn").classList.toggle("ghost",!on);
+}
+
+// close scrim on backdrop click / Esc
+document.querySelectorAll(".scrim").forEach(s=>s.addEventListener("mousedown",e=>{ if(e.target===s) s.classList.remove("show"); }));
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") document.querySelectorAll(".scrim.show").forEach(s=>s.classList.remove("show")); });
+
+// returning to tab → catch up
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden){ render(); if(gapSlots().length) openPing(true); } });
+
+function scrollToNow(){
+  const y=minOfDay(new Date())*PX_PER_MIN - 200;
+  $("calWrap").scrollTo({top:Math.max(0,y),behavior:"smooth"});
+}
+
+/* ---------- boot ---------- */
+function boot(){
+  applyTheme();
+  initInterval();
+  $("soundBtn").textContent=state.settings.soundOn?"🔊":"🔈";
+  $("soundBtn").classList.toggle("ghost",!state.settings.soundOn);
+  refreshNotifyBtn();
+  render();
+  scrollToNow();
+  tickClock();
+  setInterval(tickClock,1000);
+  scheduleTick();
+  // initial catch-up shortly after load
+  setTimeout(()=>{ if(gapSlots().length) openPing(true); }, 900);
+}
+boot();
+</script>
+</body>
+</html>

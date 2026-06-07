@@ -5,13 +5,17 @@
 
 ## Purpose
 
-Personal, browser-only time tracking. Sit down, work, get pinged every 15 minutes
-for what you're working on, build up the day as labeled blocks, scroll through past
-days in a Google-Calendar-style view, export to Excel. No backend, no login, runs as
-a single static page on GitHub Pages (and locally by double-clicking the file).
+Personal, browser-only **PC-work tracking** (not life tracking). Sit down at the PC,
+work, get pinged every 15 minutes for what you're working on, build up the day as
+labeled blocks, scroll through past days in a Google-Calendar-style view, export to
+Excel. No backend, no login, runs as a single static page on GitHub Pages (and locally
+by double-clicking the file).
 
 Mindset: Pomodoro/Pomodoro-Timer-adjacent, but passive — for tracking and review,
 not active steering.
+
+**Empty blocks are first-class.** Away from the PC = no block, by design. Catch-up
+never pressures you to fill gaps; leaving a slot empty is a one-click default.
 
 ## Constraints
 
