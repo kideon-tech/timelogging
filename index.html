@@ -2,12 +2,29 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>TimeLog — Passive Zeiterfassung per Ping</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0c0f" id="metaTheme">
+<meta name="color-scheme" content="dark light">
+<meta name="application-name" content="TimeLog">
+<meta name="description" content="Passive Zeiterfassung per Ping — pingt dich in festen Abständen und baut deinen Tag als Blöcke auf. Offline, ohne Login, Export als Excel.">
+<!-- iOS standalone -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TimeLog">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#0b0c0f;
@@ -63,7 +80,14 @@
     font-size:14px;
     line-height:1.4;
     overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    -webkit-tap-highlight-color:transparent;
+    overscroll-behavior:none;
+    -webkit-user-select:none;user-select:none;
+    touch-action:manipulation;
   }
+  /* inputs stay selectable/typable */
+  input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}
   /* subtle grain */
   body::before{
     content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:var(--grain);
@@ -72,13 +96,20 @@
   .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
 
   /* ---------- layout ---------- */
-  .app{display:flex;flex-direction:column;height:100vh}
+  .app{display:flex;flex-direction:column;height:100vh;height:100dvh}
 
   header{
     display:flex;align-items:center;gap:22px;
-    padding:16px 24px;border-bottom:1px solid var(--line);
+    padding:16px 24px;
+    padding-top:max(16px,env(safe-area-inset-top));
+    padding-left:max(24px,env(safe-area-inset-left));
+    padding-right:max(24px,env(safe-area-inset-right));
+    border-bottom:1px solid var(--line);
     background:linear-gradient(180deg,var(--bg-raised),var(--bg));
+    /* drag region when running as a desktop PWA with window-controls-overlay */
+    -webkit-app-region:drag;
   }
+  header button,header select,header .countdown{-webkit-app-region:no-drag}
   .brand{display:flex;align-items:baseline;gap:10px}
   .brand h1{
     font-family:'Instrument Serif',serif;font-weight:400;font-size:30px;
@@ -238,6 +269,54 @@
   .del:hover{background:#2a1813}
   kbd{font-family:'JetBrains Mono';font-size:10px;background:var(--bg-sunken);border:1px solid var(--line);
     border-radius:4px;padding:1px 5px;color:var(--text-dim)}
+
+  /* ---------- install affordance ---------- */
+  #installBtn{display:none;border-color:var(--amber);color:var(--amber)}
+  #installBtn.show{display:inline-flex}
+  .ioslist{margin:14px 0 4px;padding:0;list-style:none;counter-reset:step}
+  .ioslist li{position:relative;padding:10px 0 10px 40px;border-bottom:1px solid var(--line-soft);
+    color:var(--text-dim);font-size:14px}
+  .ioslist li:last-child{border-bottom:0}
+  .ioslist li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:9px;
+    width:26px;height:26px;border-radius:50%;background:var(--amber-soft);color:var(--amber);
+    display:grid;place-items:center;font-family:'JetBrains Mono';font-size:12px;font-weight:700}
+  .ioslist b{color:var(--text)}
+  .shareglyph{display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--line);
+    border-radius:5px;vertical-align:-6px;color:var(--now);font-size:13px}
+
+  /* ---------- responsive / mobile app shell ---------- */
+  @media (max-width:760px){
+    header{gap:12px;padding:12px 14px;padding-top:max(12px,env(safe-area-inset-top));flex-wrap:wrap}
+    .brand h1{font-size:25px}
+    .brand small{display:none}
+    .clock .big{font-size:18px}
+    .clock .sub{font-size:10px}
+    .countdown{min-width:0;padding:6px 10px;gap:9px}
+    .countdown .meta span{display:none}
+    .spacer{display:none}
+    .controls{gap:6px;flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start;
+      padding-top:10px;border-top:1px solid var(--line-soft)}
+    button.btn{padding:9px 12px;font-size:13px}
+    button.icon{width:38px;height:38px}
+    .subbar{gap:8px;padding:9px 14px;flex-wrap:wrap}
+    .subbar .range{font-size:18px;order:-1;flex:1 1 100%}
+    .legend{display:none}
+    .cal{grid-template-columns:44px 1fr}
+    .col-head .dnum{font-size:21px}
+    .hr-label{font-size:9px}
+    /* bottom-sheet modals */
+    .scrim{align-items:flex-end;padding:0}
+    .modal{width:100%;max-width:100%;max-height:92dvh;border-radius:20px 20px 0 0;
+      border-left:0;border-right:0;border-bottom:0;animation:sheet .26s cubic-bezier(.2,.85,.25,1)}
+    .modal-f{padding-bottom:max(22px,env(safe-area-inset-bottom))}
+    .row{flex-direction:column;gap:8px}
+  }
+  @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  /* touch targets never below 38px even on desktop-narrow */
+  @media (pointer:coarse){
+    .gaprow input,.gaprow .skip{min-height:40px}
+    .chip-b{padding:9px 14px}
+  }
 </style>
 </head>
 <body>
@@ -266,6 +345,7 @@
     </div>
     <div class="spacer"></div>
     <div class="controls">
+      <button class="btn" id="installBtn" title="Als App installieren">↗ App installieren</button>
       <select class="hsel" id="intervalSel" title="Blockgröße / Ping-Intervall"></select>
       <button class="btn ghost icon" id="themeBtn" title="Hell/Dunkel umschalten">🌙</button>
       <button class="btn ghost" id="notifyBtn" title="Browser-Benachrichtigungen erlauben">🔔 Notify</button>
@@ -351,6 +431,22 @@
   </div>
 </div>
 
+<!-- Install help modal (iOS / fallback) -->
+<div class="scrim" id="installScrim">
+  <div class="modal">
+    <div class="modal-h">
+      <div class="kick">INSTALLIEREN</div>
+      <h2 id="installTitle">TimeLog als App</h2>
+      <p id="installLead">So legst du TimeLog wie eine native App auf deinen Home-Bildschirm — läuft danach offline, im eigenen Fenster, ohne Browser-Leiste.</p>
+    </div>
+    <div class="modal-b" id="installBody"></div>
+    <div class="modal-f">
+      <div class="spacer"></div>
+      <button class="btn amber" id="installClose">Verstanden</button>
+    </div>
+  </div>
+</div>
+
 <datalist id="labelList"></datalist>
 <div class="toast" id="toast"></div>
 
@@ -363,7 +459,8 @@
 const KEY = "timelog.v1";
 const INTERVALS = [60,30,20,15,10,6];   // = 60 / n  (n = 1,2,3,4,6,10)
 let SLOT_MIN = 15;                       // active block size, from settings
-const DAY_COLS = 3;
+function colsForViewport(){ return window.matchMedia("(max-width:760px)").matches ? 1 : 3; }
+let DAY_COLS = colsForViewport();        // 3 on desktop, 1 on phones
 const CATCHUP_CAP_MS = 2 * 60 * 60 * 1000;   // only ask back ~2h
 const PALETTE = ["#e8a33d","#5ec5b6","#e06c75","#7aa2f7","#c39ac9",
                  "#a3be8c","#d19a66","#56b6c2","#e5c07b","#bb9af7","#ef9fbc","#83c9f4"];
@@ -507,6 +604,8 @@ function renderCalendar(){
   const cal=$("cal"); cal.innerHTML="";
   const totalH=24*HOUR_PX;
   const now=new Date();
+  const gutPx = DAY_COLS===1 ? 44 : 60;
+  cal.style.gridTemplateColumns = gutPx+"px repeat("+DAY_COLS+",1fr)";
 
   // gutter
   const gut=document.createElement("div"); gut.className="gutter"; gut.style.height=totalH+"px";
@@ -675,36 +774,70 @@ function openCatchup(gaps){
   foot.append(skipAll,sp,ok);
 }
 
-/* ---------- drag-to-select (Google-Calendar-Stil) ---------- */
+/* ---------- drag-to-select (Pointer Events: mouse drag, touch long-press) ----------
+   Mouse/pen: press-drag selects immediately, like Google Calendar.
+   Touch: a plain tap quick-logs one slot; a long-press (~260ms) then drag
+   selects a range — so normal vertical scrolling of the calendar still works. */
 function attachDrag(col,day){
-  col.addEventListener("mousedown",e=>{
-    if(e.button!==0||e.target.closest(".block")||e.target.closest(".col-head")) return;
+  col.addEventListener("pointerdown",e=>{
+    if(e.button>0) return;                                    // ignore right/middle
+    if(e.target.closest(".block")||e.target.closest(".col-head")) return;
     const rect=col.getBoundingClientRect();
     const slotPx=SLOT_MIN*PX_PER_MIN, maxIdx=Math.floor(1440/SLOT_MIN)-1;
     const idxAt=cy=>Math.max(0,Math.min(maxIdx,Math.floor((cy-rect.top)/slotPx)));
-    const startIdx=idxAt(e.clientY);
-    const box=document.createElement("div"); box.className="selbox";
-    const lbl=document.createElement("span"); lbl.className="sl"; lbl.textContent="Eintragen…";
-    const tm=document.createElement("span"); tm.className="st";
-    box.appendChild(lbl); box.appendChild(tm);
-    col.appendChild(box);
-    document.body.classList.add("dragging");
+    const startIdx=idxAt(e.clientY), startY=e.clientY, startX=e.clientX;
+    const touch=e.pointerType==="touch";
     const slotTime=i=>{ const d=new Date(day); d.setMinutes(i*SLOT_MIN); return d; };
+    let selecting=false, holdTimer=null, box=null, lbl=null, tm=null;
+
     const draw=cur=>{
       const lo=Math.min(startIdx,cur),hi=Math.max(startIdx,cur);
       box.style.top=(lo*slotPx)+"px"; box.style.height=((hi-lo+1)*slotPx)+"px";
       tm.textContent=hhmm(slotTime(lo))+"–"+hhmm(slotTime(hi+1))+" · "+fmtDur((hi-lo+1)*SLOT_MIN);
     };
-    draw(startIdx);
-    const move=ev=>draw(idxAt(ev.clientY));
-    const up=ev=>{
-      document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up);
-      document.body.classList.remove("dragging"); box.remove();
-      const cur=idxAt(ev.clientY), lo=Math.min(startIdx,cur), hi=Math.max(startIdx,cur);
-      openRangeEntry(slotTime(lo),slotTime(hi+1));
+    const beginSel=()=>{
+      selecting=true; holdTimer=null;
+      box=document.createElement("div"); box.className="selbox";
+      lbl=document.createElement("span"); lbl.className="sl"; lbl.textContent="Eintragen…";
+      tm=document.createElement("span"); tm.className="st"; box.appendChild(lbl); box.appendChild(tm);
+      col.appendChild(box); document.body.classList.add("dragging");
+      col.style.touchAction="none";                          // stop scroll once selecting
+      try{ col.setPointerCapture(e.pointerId); }catch(_){}
+      if(touch && navigator.vibrate) navigator.vibrate(8);
+      draw(startIdx);
     };
-    document.addEventListener("mousemove",move); document.addEventListener("mouseup",up);
-    e.preventDefault();
+    const cleanup=()=>{
+      document.removeEventListener("pointermove",move);
+      document.removeEventListener("pointerup",up);
+      document.removeEventListener("pointercancel",up);
+      if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
+      document.body.classList.remove("dragging");
+      col.style.touchAction="";
+      if(box){ box.remove(); box=null; }
+    };
+    const move=ev=>{
+      if(selecting){ ev.preventDefault(); draw(idxAt(ev.clientY)); return; }
+      if(holdTimer && (Math.abs(ev.clientY-startY)>10||Math.abs(ev.clientX-startX)>10)){
+        cleanup();                                            // moved before hold → it's a scroll
+      }
+    };
+    const up=ev=>{
+      const wasSelecting=selecting;
+      const moved=Math.abs(ev.clientY-startY)>10||Math.abs(ev.clientX-startX)>10;
+      cleanup();
+      if(wasSelecting){
+        const cur=idxAt(ev.clientY), lo=Math.min(startIdx,cur), hi=Math.max(startIdx,cur);
+        openRangeEntry(slotTime(lo),slotTime(hi+1));
+      } else if(touch && !moved){
+        openRangeEntry(slotTime(startIdx),slotTime(startIdx+1));  // tap = log this slot
+      }
+    };
+
+    document.addEventListener("pointermove",move,{passive:false});
+    document.addEventListener("pointerup",up);
+    document.addEventListener("pointercancel",up);
+    if(touch){ holdTimer=setTimeout(beginSel,260); }
+    else { beginSel(); e.preventDefault(); }
   });
 }
 
@@ -895,7 +1028,7 @@ function notify(n){
 
 /* ---------- toast ---------- */
 let toastT=null;
-function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show");
+function toast(m){ const t=$("toast"); t.textContent=m; t.onclick=null; t.style.cursor=""; t.classList.add("show");
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2400); }
 
 /* ============================================================
@@ -912,10 +1045,91 @@ $("expAll").onclick=()=>{ $("expFrom").value=""; $("expTo").value=""; updateExpC
 $("expGo").onclick=doExport;
 $("expFrom").onchange=updateExpCount; $("expTo").onchange=updateExpCount;
 
+/* ============================================================
+   PWA: install flow, service worker, responsive re-render
+   ============================================================ */
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+              (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+const isStandalone = window.matchMedia("(display-mode: standalone)").matches ||
+                     window.navigator.standalone===true;
+let deferredPrompt=null;
+
+window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); deferredPrompt=e;
+  if(!isStandalone) $("installBtn").classList.add("show"); });
+window.addEventListener("appinstalled",()=>{ deferredPrompt=null;
+  $("installBtn").classList.remove("show"); toast("Installiert — viel Spaß 🎉"); });
+
+$("installBtn").onclick=async()=>{
+  if(deferredPrompt){
+    deferredPrompt.prompt();
+    const {outcome}=await deferredPrompt.userChoice;
+    deferredPrompt=null;
+    if(outcome==="accepted") $("installBtn").classList.remove("show");
+    return;
+  }
+  openInstallHelp();                       // iOS / browsers without the prompt API
+};
+$("installClose").onclick=()=>close("installScrim");
+
+function openInstallHelp(){
+  const ua=navigator.userAgent, isFirefox=/firefox/i.test(ua);
+  let steps;
+  if(isIOS){
+    $("installTitle").textContent="Auf iPhone / iPad installieren";
+    steps=['Tippe unten in Safari auf <b>Teilen</b> <span class="shareglyph">⬆</span>',
+           'Wähle <b>„Zum Home-Bildschirm"</b>',
+           'Oben rechts auf <b>Hinzufügen</b> — fertig.'];
+  } else if(isFirefox){
+    $("installTitle").textContent="Installieren";
+    steps=['Öffne das Browser-<b>Menü</b> (⋮ oben rechts)',
+           'Wähle <b>„App installieren"</b> / „Zum Startbildschirm hinzufügen"',
+           'Bestätigen — läuft danach im eigenen Fenster.'];
+  } else {
+    $("installTitle").textContent="Installieren";
+    steps=['Klick in der Adressleiste auf das <b>Installieren-Symbol</b> (↗ bzw. Monitor mit Pfeil)',
+           'Alternativ Browser-<b>Menü</b> (⋮) → <b>„App installieren"</b>',
+           'Bestätigen — TimeLog läuft danach offline im eigenen Fenster.'];
+  }
+  $("installBody").innerHTML='<ul class="ioslist">'+steps.map(s=>"<li>"+s+"</li>").join("")+'</ul>';
+  $("installScrim").classList.add("show");
+}
+
+// re-render when crossing the mobile/desktop breakpoint
+let resizeT=null;
+window.addEventListener("resize",()=>{ clearTimeout(resizeT); resizeT=setTimeout(()=>{
+  const c=colsForViewport(); if(c!==DAY_COLS){ DAY_COLS=c; render(); }
+},150); });
+
+// service worker: offline + update prompt
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>{
+    navigator.serviceWorker.register("sw.js").then(reg=>{
+      reg.addEventListener("updatefound",()=>{
+        const nw=reg.installing; if(!nw) return;
+        nw.addEventListener("statechange",()=>{
+          if(nw.state==="installed" && navigator.serviceWorker.controller) showUpdateToast(reg);
+        });
+      });
+    }).catch(()=>{});
+    let refreshing=false;
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{
+      if(refreshing) return; refreshing=true; location.reload();
+    });
+  });
+}
+function showUpdateToast(reg){
+  const t=$("toast"); t.textContent="Neue Version verfügbar — tippen zum Aktualisieren";
+  t.style.cursor="pointer"; t.classList.add("show");
+  t.onclick=()=>{ if(reg.waiting) reg.waiting.postMessage("skipWaiting"); t.classList.remove("show"); };
+  clearTimeout(toastT); toastT=setTimeout(()=>{ t.classList.remove("show"); t.onclick=null; t.style.cursor=""; },9000);
+}
+
 function applyTheme(){
   const light=state.settings.theme==="light";
   document.documentElement.setAttribute("data-theme", light?"light":"dark");
   $("themeBtn").textContent=light?"☀️":"🌙";
+  // tint the OS status bar / window chrome to match the app
+  const meta=$("metaTheme"); if(meta) meta.setAttribute("content", light?"#eceef3":"#0b0c0f");
 }
 $("themeBtn").onclick=()=>{ state.settings.theme=(state.settings.theme==="light")?"dark":"light"; save(); applyTheme(); };
 
@@ -974,8 +1188,15 @@ function boot(){
   tickClock();
   setInterval(tickClock,1000);
   scheduleTick();
-  // initial catch-up shortly after load
-  setTimeout(()=>{ if(gapSlots().length) openPing(true); }, 900);
+
+  // iOS has no beforeinstallprompt — surface the install help button manually
+  if(isIOS && !isStandalone) $("installBtn").classList.add("show");
+
+  // manifest shortcuts: ?action=log | export
+  const action=new URLSearchParams(location.search).get("action");
+  if(action==="log"){ setTimeout(openLogNow,350); }
+  else if(action==="export"){ setTimeout(()=>{ updateExpCount(); $("exportScrim").classList.add("show"); },350); }
+  else { setTimeout(()=>{ if(gapSlots().length) openPing(true); }, 900); }  // initial catch-up
 }
 boot();
 </script>
