@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TimeLog — PC-Arbeitstracking</title>
+<title>TimeLog — Passive Zeiterfassung per Ping</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -152,9 +152,13 @@
     color:var(--text-faint);transform:translateY(-6px)}
 
   .daycol{position:relative;border-left:1px solid var(--line-soft);cursor:cell}
-  .selbox{position:absolute;left:4px;right:4px;background:var(--amber-soft);
-    border:1.5px dashed var(--amber);border-radius:6px;z-index:3;pointer-events:none}
-  .selbox .sl{position:absolute;left:7px;top:3px;font-family:'JetBrains Mono';font-size:10px;color:var(--amber);font-weight:700}
+  .selbox{position:absolute;left:4px;right:4px;border-radius:6px;padding:4px 8px;overflow:hidden;
+    border-left:4px solid var(--amber);border-top:1px solid var(--amber);
+    box-shadow:inset 0 0 0 1px #ffffff10, 0 1px 3px #00000055;
+    background:var(--amber-soft);z-index:5;pointer-events:none}
+  .selbox .sl{display:block;font-size:12px;font-weight:600;color:var(--amber);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .selbox .st{font-family:'JetBrains Mono';font-size:9.5px;color:var(--text-dim)}
   body.dragging{user-select:none}
   .daycol.today{background:linear-gradient(180deg,#f5a6230a,transparent 30%)}
   .hr-line{position:absolute;left:0;right:0;height:1px;background:var(--line-soft)}
@@ -242,7 +246,7 @@
     <div class="brand">
       <span class="dot"></span>
       <h1>TimeLog</h1>
-      <small>PC-Arbeitstracking</small>
+      <small>Passive Zeiterfassung per Ping</small>
     </div>
     <div class="clock">
       <span class="big mono" id="clock">--:--</span>
@@ -353,7 +357,7 @@
 <script>
 "use strict";
 /* ============================================================
-   TimeLog — single-file PC work tracker.  MIT License.
+   TimeLog — single-file passive time tracker.  MIT License.
    ============================================================ */
 
 const KEY = "timelog.v1";
@@ -680,14 +684,16 @@ function attachDrag(col,day){
     const idxAt=cy=>Math.max(0,Math.min(maxIdx,Math.floor((cy-rect.top)/slotPx)));
     const startIdx=idxAt(e.clientY);
     const box=document.createElement("div"); box.className="selbox";
-    const lbl=document.createElement("span"); lbl.className="sl"; box.appendChild(lbl);
+    const lbl=document.createElement("span"); lbl.className="sl"; lbl.textContent="Eintragen…";
+    const tm=document.createElement("span"); tm.className="st";
+    box.appendChild(lbl); box.appendChild(tm);
     col.appendChild(box);
     document.body.classList.add("dragging");
     const slotTime=i=>{ const d=new Date(day); d.setMinutes(i*SLOT_MIN); return d; };
     const draw=cur=>{
       const lo=Math.min(startIdx,cur),hi=Math.max(startIdx,cur);
       box.style.top=(lo*slotPx)+"px"; box.style.height=((hi-lo+1)*slotPx)+"px";
-      lbl.textContent=hhmm(slotTime(lo))+"–"+hhmm(slotTime(hi+1))+"  ("+fmtDur((hi-lo+1)*SLOT_MIN)+")";
+      tm.textContent=hhmm(slotTime(lo))+"–"+hhmm(slotTime(hi+1))+" · "+fmtDur((hi-lo+1)*SLOT_MIN);
     };
     draw(startIdx);
     const move=ev=>draw(idxAt(ev.clientY));
