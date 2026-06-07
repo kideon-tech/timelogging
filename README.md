@@ -1,5 +1,7 @@
 # TimeLog
 
+**Live: https://jb--.github.io/timelogging/**
+
 Browser-only **PC-Arbeitstracking**. Eine einzige `index.html`, kein Backend, kein Login.
 Sie pingt dich alle 15 Minuten — *"woran arbeitest du gerade?"* — und baut deinen Tag
 als Blöcke in einer 3-Tage-Kalenderansicht auf. Export als Excel. Daten leben im
